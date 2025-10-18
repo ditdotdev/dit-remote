@@ -1,0 +1,26 @@
+#
+# Copyright Datadatdat.
+#
+
+#
+# We use release drafter to keep the in-progress release notes up to date:
+#
+#   https://github.com/marketplace/actions/release-drafter
+#
+name: Draft Release
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  update_draft_release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: release-drafter/release-drafter@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
