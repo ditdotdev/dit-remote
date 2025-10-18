@@ -42,11 +42,13 @@ class DatadadatRemoteServer : ArchiveRemote() {
     private val octetStreamMediaType = "application/octet-stream".toMediaType()
 
     // HTTP client with reasonable timeouts
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(300, TimeUnit.SECONDS)
-        .writeTimeout(300, TimeUnit.SECONDS)
-        .build()
+    private val httpClient =
+        OkHttpClient
+            .Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(300, TimeUnit.SECONDS)
+            .writeTimeout(300, TimeUnit.SECONDS)
+            .build()
 
     override fun getProvider(): String = "datadatdat"
 
@@ -58,7 +60,7 @@ class DatadadatRemoteServer : ArchiveRemote() {
         util.validateFields(
             remote,
             listOf("api_base_url", "org", "repo"),
-            listOf("port", "api_token")
+            listOf("port", "api_token"),
         )
 
         // Validate port if present
@@ -94,9 +96,10 @@ class DatadadatRemoteServer : ArchiveRemote() {
     /**
      * Get the API token from parameters or remote properties.
      */
-    private fun getApiToken(remote: Map<String, Any>, parameters: Map<String, Any>): String? {
-        return (parameters["api_token"] ?: remote["api_token"]) as? String
-    }
+    private fun getApiToken(
+        remote: Map<String, Any>,
+        parameters: Map<String, Any>,
+    ): String? = (parameters["api_token"] ?: remote["api_token"]) as? String
 
     /**
      * Build the base API URL from remote properties.
@@ -126,14 +129,16 @@ class DatadadatRemoteServer : ArchiveRemote() {
     override fun getCommit(
         remote: Map<String, Any>,
         parameters: Map<String, Any>,
-        commitId: String
+        commitId: String,
     ): Map<String, Any>? {
         val baseUrl = getBaseUrl(remote)
         val apiToken = getApiToken(remote, parameters)
 
-        val requestBuilder = Request.Builder()
-            .url("$baseUrl/commits/$commitId")
-            .get()
+        val requestBuilder =
+            Request
+                .Builder()
+                .url("$baseUrl/commits/$commitId")
+                .get()
 
         if (apiToken != null) {
             requestBuilder.addHeader("Authorization", "Bearer $apiToken")
@@ -158,14 +163,16 @@ class DatadadatRemoteServer : ArchiveRemote() {
     override fun listCommits(
         remote: Map<String, Any>,
         parameters: Map<String, Any>,
-        tags: List<Pair<String, String?>>
+        tags: List<Pair<String, String?>>,
     ): List<Pair<String, Map<String, Any>>> {
         val baseUrl = getBaseUrl(remote)
         val apiToken = getApiToken(remote, parameters)
 
-        val requestBuilder = Request.Builder()
-            .url("$baseUrl/commits")
-            .get()
+        val requestBuilder =
+            Request
+                .Builder()
+                .url("$baseUrl/commits")
+                .get()
 
         if (apiToken != null) {
             requestBuilder.addHeader("Authorization", "Bearer $apiToken")
@@ -176,22 +183,23 @@ class DatadadatRemoteServer : ArchiveRemote() {
         val commits: List<Map<String, Any>> = gson.fromJson(responseBody, type)
 
         // Convert to list of pairs and filter by tags
-        val result = commits.mapNotNull { commit ->
-            val id = commit["id"]
-            val properties = commit["properties"]
-            if (id != null && properties != null) {
-                id as String
-                @Suppress("UNCHECKED_CAST")
-                properties as Map<String, Any>
-                if (util.matchTags(properties, tags)) {
-                    id to properties
+        val result =
+            commits.mapNotNull { commit ->
+                val id = commit["id"]
+                val properties = commit["properties"]
+                if (id != null && properties != null) {
+                    id as String
+                    @Suppress("UNCHECKED_CAST")
+                    properties as Map<String, Any>
+                    if (util.matchTags(properties, tags)) {
+                        id to properties
+                    } else {
+                        null
+                    }
                 } else {
                     null
                 }
-            } else {
-                null
             }
-        }
 
         return util.sortDescending(result)
     }
@@ -210,7 +218,7 @@ class DatadadatRemoteServer : ArchiveRemote() {
     override fun syncDataEnd(
         operation: RemoteOperation,
         operationData: Any?,
-        isSuccessful: Boolean
+        isSuccessful: Boolean,
     ) {
         // No cleanup needed
     }
@@ -222,15 +230,17 @@ class DatadadatRemoteServer : ArchiveRemote() {
         operation: RemoteOperation,
         operationData: Any?,
         volume: String,
-        archive: File
+        archive: File,
     ) {
         val baseUrl = getBaseUrl(operation.remote)
         val apiToken = getApiToken(operation.remote, operation.parameters)
         val commitId = operation.commitId
 
-        val requestBuilder = Request.Builder()
-            .url("$baseUrl/commits/$commitId/volumes/$volume")
-            .get()
+        val requestBuilder =
+            Request
+                .Builder()
+                .url("$baseUrl/commits/$commitId/volumes/$volume")
+                .get()
 
         if (apiToken != null) {
             requestBuilder.addHeader("Authorization", "Bearer $apiToken")
@@ -257,7 +267,7 @@ class DatadadatRemoteServer : ArchiveRemote() {
         operation: RemoteOperation,
         operationData: Any?,
         volume: String,
-        archive: File
+        archive: File,
     ) {
         val baseUrl = getBaseUrl(operation.remote)
         val apiToken = getApiToken(operation.remote, operation.parameters)
@@ -268,9 +278,11 @@ class DatadadatRemoteServer : ArchiveRemote() {
         }
 
         val requestBody = archive.asRequestBody(octetStreamMediaType)
-        val requestBuilder = Request.Builder()
-            .url("$baseUrl/commits/$commitId/volumes/$volume")
-            .put(requestBody)
+        val requestBuilder =
+            Request
+                .Builder()
+                .url("$baseUrl/commits/$commitId/volumes/$volume")
+                .put(requestBody)
 
         if (apiToken != null) {
             requestBuilder.addHeader("Authorization", "Bearer $apiToken")
@@ -285,20 +297,26 @@ class DatadadatRemoteServer : ArchiveRemote() {
     override fun pushMetadata(
         operation: RemoteOperation,
         commit: Map<String, Any>,
-        isUpdate: Boolean
+        isUpdate: Boolean,
     ) {
         val baseUrl = getBaseUrl(operation.remote)
         val apiToken = getApiToken(operation.remote, operation.parameters)
         val commitId = operation.commitId
 
-        val requestBody = gson.toJson(mapOf(
-            "id" to commitId,
-            "properties" to commit
-        )).toRequestBody(jsonMediaType)
+        val requestBody =
+            gson
+                .toJson(
+                    mapOf(
+                        "id" to commitId,
+                        "properties" to commit,
+                    ),
+                ).toRequestBody(jsonMediaType)
 
-        val requestBuilder = Request.Builder()
-            .url("$baseUrl/commits")
-            .post(requestBody)
+        val requestBuilder =
+            Request
+                .Builder()
+                .url("$baseUrl/commits")
+                .post(requestBody)
 
         if (apiToken != null) {
             requestBuilder.addHeader("Authorization", "Bearer $apiToken")
