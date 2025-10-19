@@ -86,10 +86,15 @@ class DatadadatRemoteServer : ArchiveRemote() {
     }
 
     /**
-     * Validate datadatdat parameters. The only supported parameter is api_token.
+     * Validate datadatdat parameters. Parameters can include all remote properties
+     * plus api_token for authentication.
      */
     override fun validateParameters(parameters: Map<String, Any>): Map<String, Any> {
-        util.validateFields(parameters, emptyList(), listOf("api_token"))
+        util.validateFields(
+            parameters,
+            emptyList(),
+            listOf("api_base_url", "org", "repo", "port", "api_token"),
+        )
         return parameters
     }
 
