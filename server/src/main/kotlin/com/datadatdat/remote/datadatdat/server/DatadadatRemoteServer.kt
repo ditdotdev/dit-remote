@@ -190,12 +190,12 @@ class DatadadatRemoteServer : ArchiveRemote() {
         // Convert to list of pairs and filter by tags
         val result =
             commits.mapNotNull { commit ->
-                val id = commit["id"]
-                val properties = commit["properties"]
-                if (id != null && properties != null) {
+                val id = commit["commitId"] // API returns "commitId" not "id"
+                val metadata = commit["metadata"] // API returns full metadata in "metadata" field
+                if (id != null && metadata != null) {
                     id as String
                     @Suppress("UNCHECKED_CAST")
-                    properties as Map<String, Any>
+                    val properties = metadata as Map<String, Any>
                     if (util.matchTags(properties, tags)) {
                         id to properties
                     } else {
