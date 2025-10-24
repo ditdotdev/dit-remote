@@ -176,7 +176,7 @@ class DatadadatRemoteServer : ArchiveRemote() {
         val requestBuilder =
             Request
                 .Builder()
-                .url("$baseUrl/commits")
+                .url("$baseUrl/commits?action=list-commits")
                 .get()
 
         if (apiToken != null) {
@@ -184,8 +184,11 @@ class DatadadatRemoteServer : ArchiveRemote() {
         }
 
         val responseBody = executeRequest(requestBuilder.build())
-        val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-        val commits: List<Map<String, Any>> = gson.fromJson(responseBody, type)
+        val responseType = object : TypeToken<Map<String, Any>>() {}.type
+        val response: Map<String, Any> = gson.fromJson(responseBody, responseType)
+
+        @Suppress("UNCHECKED_CAST")
+        val commits = (response["commits"] as? List<Map<String, Any>>) ?: emptyList()
 
         // Convert to list of pairs and filter by tags
         val result =
