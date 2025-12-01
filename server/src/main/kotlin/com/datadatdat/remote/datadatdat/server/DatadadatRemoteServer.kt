@@ -177,7 +177,7 @@ class DatadadatRemoteServer : ArchiveRemote() {
         val requestBuilder =
             Request
                 .Builder()
-                .url("$baseUrl/commits?action=list-commits")
+                .url("$baseUrl/commits")
                 .get()
 
         if (apiToken != null) {
