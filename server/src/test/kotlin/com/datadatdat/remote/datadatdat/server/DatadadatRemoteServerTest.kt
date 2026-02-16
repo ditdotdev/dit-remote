@@ -27,17 +27,19 @@ class DatadadatRemoteServerTest : StringSpec() {
 
     // Server with mocked HTTP client for testing HTTP-dependent methods
     private val mockClient = mockk<OkHttpClient>()
-    private val mockedServer = DatadadatRemoteServer().also { s ->
-        val field = DatadadatRemoteServer::class.java.getDeclaredField("httpClient")
-        field.isAccessible = true
-        field.set(s, mockClient)
-    }
+    private val mockedServer =
+        DatadadatRemoteServer().also { s ->
+            val field = DatadadatRemoteServer::class.java.getDeclaredField("httpClient")
+            field.isAccessible = true
+            field.set(s, mockClient)
+        }
 
-    private val baseRemote = mapOf(
-        "api_base_url" to "http://localhost:8080",
-        "org" to "myorg",
-        "repo" to "myrepo",
-    )
+    private val baseRemote =
+        mapOf(
+            "api_base_url" to "http://localhost:8080",
+            "org" to "myorg",
+            "repo" to "myrepo",
+        )
 
     private val baseParams = emptyMap<String, Any>()
 
@@ -46,22 +48,28 @@ class DatadadatRemoteServerTest : StringSpec() {
         parameters: Map<String, Any> = baseParams,
         commitId: String = "commit-123",
         type: RemoteOperationType = RemoteOperationType.PUSH,
-    ): RemoteOperation = RemoteOperation(
-        updateProgress = { _, _, _ -> },
-        remote = remote,
-        parameters = parameters,
-        operationId = "op-1",
-        commitId = commitId,
-        commit = mapOf("key" to "value"),
-        type = type,
-    )
+    ): RemoteOperation =
+        RemoteOperation(
+            updateProgress = { _, _, _ -> },
+            remote = remote,
+            parameters = parameters,
+            operationId = "op-1",
+            commitId = commitId,
+            commit = mapOf("key" to "value"),
+            type = type,
+        )
 
     /**
      * Build a mock OkHttp response with the given code and body.
      */
-    private fun mockResponse(code: Int, body: String, request: Request? = null): Response {
+    private fun mockResponse(
+        code: Int,
+        body: String,
+        request: Request? = null,
+    ): Response {
         val req = request ?: Request.Builder().url("http://localhost").build()
-        return Response.Builder()
+        return Response
+            .Builder()
             .request(req)
             .protocol(Protocol.HTTP_1_1)
             .code(code)
@@ -341,13 +349,14 @@ class DatadadatRemoteServerTest : StringSpec() {
         }
 
         "validateParameters succeeds with all optional fields" {
-            val params = mapOf(
-                "api_base_url" to "http://localhost:8080",
-                "org" to "myorg",
-                "repo" to "myrepo",
-                "port" to 8080,
-                "api_token" to "secret123",
-            )
+            val params =
+                mapOf(
+                    "api_base_url" to "http://localhost:8080",
+                    "org" to "myorg",
+                    "repo" to "myrepo",
+                    "port" to 8080,
+                    "api_token" to "secret123",
+                )
             val result = server.validateParameters(params)
             result["api_token"] shouldBe "secret123"
         }
@@ -364,7 +373,11 @@ class DatadadatRemoteServerTest : StringSpec() {
             result shouldNotBe null
             result!!["commitId"] shouldBe "commit-123"
 
-            verify { mockClient.newCall(match { it.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits/commit-123" }) }
+            verify {
+                mockClient.newCall(
+                    match { it.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits/commit-123" },
+                )
+            }
         }
 
         "getCommit returns null on 404" {
@@ -390,9 +403,11 @@ class DatadadatRemoteServerTest : StringSpec() {
             mockedServer.getCommit(baseRemote, params, "commit-123")
 
             verify {
-                mockClient.newCall(match { request ->
-                    request.header("Authorization") == "Bearer my-secret-token"
-                })
+                mockClient.newCall(
+                    match { request ->
+                        request.header("Authorization") == "Bearer my-secret-token"
+                    },
+                )
             }
         }
 
@@ -404,9 +419,11 @@ class DatadadatRemoteServerTest : StringSpec() {
             mockedServer.getCommit(remoteWithToken, baseParams, "commit-123")
 
             verify {
-                mockClient.newCall(match { request ->
-                    request.header("Authorization") == "Bearer remote-token"
-                })
+                mockClient.newCall(
+                    match { request ->
+                        request.header("Authorization") == "Bearer remote-token"
+                    },
+                )
             }
         }
 
@@ -419,9 +436,11 @@ class DatadadatRemoteServerTest : StringSpec() {
             mockedServer.getCommit(remoteWithToken, paramsWithToken, "commit-123")
 
             verify {
-                mockClient.newCall(match { request ->
-                    request.header("Authorization") == "Bearer param-token"
-                })
+                mockClient.newCall(
+                    match { request ->
+                        request.header("Authorization") == "Bearer param-token"
+                    },
+                )
             }
         }
 
@@ -432,9 +451,11 @@ class DatadadatRemoteServerTest : StringSpec() {
             mockedServer.getCommit(baseRemote, baseParams, "commit-123")
 
             verify {
-                mockClient.newCall(match { request ->
-                    request.header("Authorization") == null
-                })
+                mockClient.newCall(
+                    match { request ->
+                        request.header("Authorization") == null
+                    },
+                )
             }
         }
 
@@ -482,11 +503,12 @@ class DatadadatRemoteServerTest : StringSpec() {
             }"""
             setupMockCall(mockResponse(200, responseJson))
 
-            val result = mockedServer.listCommits(
-                baseRemote,
-                baseParams,
-                listOf("env" to "prod"),
-            )
+            val result =
+                mockedServer.listCommits(
+                    baseRemote,
+                    baseParams,
+                    listOf("env" to "prod"),
+                )
             result.size shouldBe 1
             result[0].first shouldBe "c1"
         }
@@ -535,10 +557,12 @@ class DatadadatRemoteServerTest : StringSpec() {
             mockedServer.listCommits(baseRemote, params, emptyList())
 
             verify {
-                mockClient.newCall(match { request ->
-                    request.header("Authorization") == "Bearer my-token" &&
-                        request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits"
-                })
+                mockClient.newCall(
+                    match { request ->
+                        request.header("Authorization") == "Bearer my-token" &&
+                            request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits"
+                    },
+                )
             }
         }
 
@@ -581,10 +605,12 @@ class DatadadatRemoteServerTest : StringSpec() {
                 tempFile.readText() shouldBe archiveContent
 
                 verify {
-                    mockClient.newCall(match { request ->
-                        request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits/commit-456/volumes/data" &&
-                            request.method == "GET"
-                    })
+                    mockClient.newCall(
+                        match { request ->
+                            request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits/commit-456/volumes/data" &&
+                                request.method == "GET"
+                        },
+                    )
                 }
             } finally {
                 tempFile.delete()
@@ -616,9 +642,11 @@ class DatadadatRemoteServerTest : StringSpec() {
                 mockedServer.pullArchive(op, null, "vol1", tempFile)
 
                 verify {
-                    mockClient.newCall(match { request ->
-                        request.header("Authorization") == "Bearer pull-token"
-                    })
+                    mockClient.newCall(
+                        match { request ->
+                            request.header("Authorization") == "Bearer pull-token"
+                        },
+                    )
                 }
             } finally {
                 tempFile.delete()
@@ -639,10 +667,12 @@ class DatadadatRemoteServerTest : StringSpec() {
                 mockedServer.pushArchive(op, null, "data", tempFile)
 
                 verify {
-                    mockClient.newCall(match { request ->
-                        request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits/commit-789/volumes/data" &&
-                            request.method == "PUT"
-                    })
+                    mockClient.newCall(
+                        match { request ->
+                            request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits/commit-789/volumes/data" &&
+                                request.method == "PUT"
+                        },
+                    )
                 }
             } finally {
                 tempFile.delete()
@@ -684,9 +714,11 @@ class DatadadatRemoteServerTest : StringSpec() {
                 mockedServer.pushArchive(op, null, "vol1", tempFile)
 
                 verify {
-                    mockClient.newCall(match { request ->
-                        request.header("Authorization") == "Bearer push-token"
-                    })
+                    mockClient.newCall(
+                        match { request ->
+                            request.header("Authorization") == "Bearer push-token"
+                        },
+                    )
                 }
             } finally {
                 tempFile.delete()
@@ -705,10 +737,12 @@ class DatadadatRemoteServerTest : StringSpec() {
             mockedServer.pushMetadata(op, commit, false)
 
             verify {
-                mockClient.newCall(match { request ->
-                    request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits" &&
-                        request.method == "POST"
-                })
+                mockClient.newCall(
+                    match { request ->
+                        request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits" &&
+                            request.method == "POST"
+                    },
+                )
             }
         }
 
@@ -720,9 +754,11 @@ class DatadadatRemoteServerTest : StringSpec() {
             mockedServer.pushMetadata(op, commit, true)
 
             verify {
-                mockClient.newCall(match { request ->
-                    request.method == "POST"
-                })
+                mockClient.newCall(
+                    match { request ->
+                        request.method == "POST"
+                    },
+                )
             }
         }
 
@@ -745,9 +781,11 @@ class DatadadatRemoteServerTest : StringSpec() {
             mockedServer.pushMetadata(op, commit, false)
 
             verify {
-                mockClient.newCall(match { request ->
-                    request.header("Authorization") == "Bearer meta-token"
-                })
+                mockClient.newCall(
+                    match { request ->
+                        request.header("Authorization") == "Bearer meta-token"
+                    },
+                )
             }
         }
 
@@ -759,9 +797,11 @@ class DatadadatRemoteServerTest : StringSpec() {
             mockedServer.pushMetadata(op, commit, false)
 
             verify {
-                mockClient.newCall(match { request ->
-                    request.header("Authorization") == null
-                })
+                mockClient.newCall(
+                    match { request ->
+                        request.header("Authorization") == null
+                    },
+                )
             }
         }
 
