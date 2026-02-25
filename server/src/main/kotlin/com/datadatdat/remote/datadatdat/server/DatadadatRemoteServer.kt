@@ -153,7 +153,12 @@ class DatadadatRemoteServer : ArchiveRemote() {
         return try {
             val responseBody = executeRequest(requestBuilder.build())
             val type = object : TypeToken<Map<String, Any>>() {}.type
-            gson.fromJson<Map<String, Any>>(responseBody, type)
+            val response: Map<String, Any>? = gson.fromJson(responseBody, type)
+            if (response == null) return null
+            // The DRS API returns { "id": "...", "properties": { ... } } but the remote SDK
+            // expects just the properties map (matching what listCommits returns from "metadata")
+            @Suppress("UNCHECKED_CAST")
+            (response["properties"] as? Map<String, Any>) ?: response
         } catch (e: IOException) {
             if (e.message?.contains("404") == true) {
                 null
