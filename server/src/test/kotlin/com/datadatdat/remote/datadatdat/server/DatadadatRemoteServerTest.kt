@@ -371,7 +371,8 @@ class DatadadatRemoteServerTest : StringSpec() {
 
             val result = mockedServer.getCommit(baseRemote, baseParams, "commit-123")
             result shouldNotBe null
-            result!!["commitId"] shouldBe "commit-123"
+            result!!["timestamp"] shouldBe "2024-01-01T00:00:00Z"
+            result.containsKey("commitId") shouldBe false
 
             verify {
                 mockClient.newCall(
@@ -527,7 +528,7 @@ class DatadadatRemoteServerTest : StringSpec() {
             result[0].first shouldBe "c1"
         }
 
-        "listCommits skips commits with null metadata" {
+        "listCommits includes commits without metadata field" {
             val responseJson = """{
                 "commits": [
                     {"commitId":"c1"},
@@ -537,8 +538,26 @@ class DatadadatRemoteServerTest : StringSpec() {
             setupMockCall(mockResponse(200, responseJson))
 
             val result = mockedServer.listCommits(baseRemote, baseParams, emptyList())
-            result.size shouldBe 1
-            result[0].first shouldBe "c2"
+            result.size shouldBe 2
+            result.map { it.first }.toSet() shouldBe setOf("c1", "c2")
+        }
+
+        "listCommits handles production API format with top-level fields" {
+            val responseJson = """{
+                "commits": [
+                    {"commitId":"c1","repo":"myorg/myrepo","timestamp":"2024-01-02T00:00:00Z","size":1024,"author":"user@test.com","message":"test commit","tags":{"env":"prod"}},
+                    {"commitId":"c2","repo":"myorg/myrepo","timestamp":"2024-01-01T00:00:00Z","size":512}
+                ]
+            }"""
+            setupMockCall(mockResponse(200, responseJson))
+
+            val result = mockedServer.listCommits(baseRemote, baseParams, emptyList())
+            result.size shouldBe 2
+            result[0].first shouldBe "c1"
+            result[0].second["timestamp"] shouldBe "2024-01-02T00:00:00Z"
+            result[0].second["author"] shouldBe "user@test.com"
+            result[0].second.containsKey("commitId") shouldBe false
+            result[1].first shouldBe "c2"
         }
 
         "listCommits throws on server error" {
