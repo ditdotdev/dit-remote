@@ -156,8 +156,25 @@ class DatadadatRemoteServer : ArchiveRemote() {
             val response: Map<String, Any>? = gson.fromJson(responseBody, type)
             if (response == null) return null
 
-            // Build properties from all top-level fields (excluding commitId),
-            // merging nested metadata into the top level (matching listCommits behavior).
+            // The API returns {"id": "...", "properties": {...}} format.
+            // Extract the properties sub-map which contains the actual commit data
+            // (v2, author, message, timestamp, etc.).
+            @Suppress("UNCHECKED_CAST")
+            val props = response["properties"] as? Map<String, Any>
+            if (props != null) {
+                // Properties format: merge nested metadata into top level
+                val result = props.toMutableMap()
+                @Suppress("UNCHECKED_CAST")
+                val metadata = result.remove("metadata") as? Map<String, Any>
+                metadata?.forEach { (k, v) ->
+                    if (!result.containsKey(k)) {
+                        result[k] = v
+                    }
+                }
+                return result.toMap()
+            }
+
+            // Fallback: flat commit format (e.g., from listCommits-style response)
             val properties = response.toMutableMap()
             properties.remove("commitId")
             @Suppress("UNCHECKED_CAST")
