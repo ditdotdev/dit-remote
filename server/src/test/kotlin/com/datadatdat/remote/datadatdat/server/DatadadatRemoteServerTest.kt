@@ -365,20 +365,34 @@ class DatadadatRemoteServerTest : StringSpec() {
         // getCommit tests (exercises getApiToken, getBaseUrl, executeRequest)
         // =========================================
 
-        "getCommit returns parsed commit on success" {
-            val responseJson = """{"commitId":"commit-123","timestamp":"2024-01-01T00:00:00Z"}"""
+        "getCommit returns parsed commit on success with properties format" {
+            val responseJson = """{"id":"commit-123","properties":{"timestamp":"2024-01-01T00:00:00Z","v2":{"image":{"image":"postgres","tag":"latest"}}}}"""
             setupMockCall(mockResponse(200, responseJson))
 
             val result = mockedServer.getCommit(baseRemote, baseParams, "commit-123")
             result shouldNotBe null
             result!!["timestamp"] shouldBe "2024-01-01T00:00:00Z"
+            result.containsKey("id") shouldBe false
             result.containsKey("commitId") shouldBe false
+            // v2 should be at the top level of the returned properties
+            result.containsKey("v2") shouldBe true
 
             verify {
                 mockClient.newCall(
                     match { it.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits/commit-123" },
                 )
             }
+        }
+
+        "getCommit handles flat commit format (fallback)" {
+            val responseJson = """{"commitId":"commit-123","timestamp":"2024-01-01T00:00:00Z","metadata":{"v2":{"image":{"image":"postgres","tag":"latest"}}}}"""
+            setupMockCall(mockResponse(200, responseJson))
+
+            val result = mockedServer.getCommit(baseRemote, baseParams, "commit-123")
+            result shouldNotBe null
+            result!!["timestamp"] shouldBe "2024-01-01T00:00:00Z"
+            result.containsKey("commitId") shouldBe false
+            result.containsKey("v2") shouldBe true
         }
 
         "getCommit returns null on 404" {
