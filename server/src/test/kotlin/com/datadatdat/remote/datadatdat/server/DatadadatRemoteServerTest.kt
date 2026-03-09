@@ -574,6 +574,25 @@ class DatadadatRemoteServerTest : StringSpec() {
             result[1].first shouldBe "c2"
         }
 
+        "listCommits merges properties sub-map (PROD format) into top level" {
+            val responseJson = """{
+                "commits": [
+                    {"commitId":"c1","repo":"myorg/myrepo","timestamp":"2024-01-02T00:00:00Z","author":"user","properties":{"v2":{"image":{"image":"postgres","tag":"latest"}},"user":"Test User"}}
+                ]
+            }"""
+            setupMockCall(mockResponse(200, responseJson))
+
+            val result = mockedServer.listCommits(baseRemote, baseParams, emptyList())
+            result.size shouldBe 1
+            result[0].first shouldBe "c1"
+            // v2 should be merged from properties into top level
+            result[0].second.containsKey("v2") shouldBe true
+            // Top-level fields should be preserved over nested ones
+            result[0].second["author"] shouldBe "user"
+            // properties key itself should be removed
+            result[0].second.containsKey("properties") shouldBe false
+        }
+
         "listCommits throws on server error" {
             setupMockCall(mockResponse(500, "Internal Server Error"))
 
