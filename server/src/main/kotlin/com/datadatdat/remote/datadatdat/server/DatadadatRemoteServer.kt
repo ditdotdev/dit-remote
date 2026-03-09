@@ -155,10 +155,19 @@ class DatadadatRemoteServer : ArchiveRemote() {
             val type = object : TypeToken<Map<String, Any>>() {}.type
             val response: Map<String, Any>? = gson.fromJson(responseBody, type)
             if (response == null) return null
-            // The DRS API returns { "id": "...", "properties": { ... } } but the remote SDK
-            // expects just the properties map (matching what listCommits returns from "metadata")
+
+            // Build properties from all top-level fields (excluding commitId),
+            // merging nested metadata into the top level (matching listCommits behavior).
+            val properties = response.toMutableMap()
+            properties.remove("commitId")
             @Suppress("UNCHECKED_CAST")
-            (response["properties"] as? Map<String, Any>) ?: response
+            val metadata = properties.remove("metadata") as? Map<String, Any>
+            metadata?.forEach { (k, v) ->
+                if (!properties.containsKey(k)) {
+                    properties[k] = v
+                }
+            }
+            properties.toMap()
         } catch (e: IOException) {
             if (e.message?.contains("404") == true) {
                 null
@@ -196,20 +205,29 @@ class DatadadatRemoteServer : ArchiveRemote() {
         @Suppress("UNCHECKED_CAST")
         val commits = (response["commits"] as? List<Map<String, Any>>) ?: emptyList()
 
-        // Convert to list of pairs and filter by tags
+        // Convert to list of pairs and filter by tags.
+        // The API returns standard fields (timestamp, size, author, message, parentId, tags)
+        // as top-level fields on each commit object, with only custom properties in "metadata".
+        // We merge everything into a single properties map (matching the Go provider behavior).
         val result =
             commits.mapNotNull { commit ->
-                val id = commit["commitId"] // API returns "commitId" not "id"
-                val metadata = commit["metadata"] // API returns full metadata in "metadata" field
-                if (id != null && metadata != null) {
-                    id as String
-                    @Suppress("UNCHECKED_CAST")
-                    val properties = metadata as Map<String, Any>
-                    if (util.matchTags(properties, tags)) {
-                        id to properties
-                    } else {
-                        null
+                val id = commit["commitId"] as? String ?: return@mapNotNull null
+
+                // Build properties from all top-level fields (excluding commitId)
+                val properties = commit.toMutableMap()
+                properties.remove("commitId")
+
+                // Merge nested metadata into top-level properties
+                @Suppress("UNCHECKED_CAST")
+                val metadata = properties.remove("metadata") as? Map<String, Any>
+                metadata?.forEach { (k, v) ->
+                    if (!properties.containsKey(k)) {
+                        properties[k] = v
                     }
+                }
+
+                if (util.matchTags(properties, tags)) {
+                    id to properties.toMap()
                 } else {
                     null
                 }
