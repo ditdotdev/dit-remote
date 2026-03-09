@@ -178,8 +178,9 @@ class DatadadatRemoteServer : ArchiveRemote() {
             val properties = response.toMutableMap()
             properties.remove("commitId")
             @Suppress("UNCHECKED_CAST")
-            val metadata = properties.remove("metadata") as? Map<String, Any>
-            metadata?.forEach { (k, v) ->
+            val nested = (properties.remove("metadata") as? Map<String, Any>)
+                ?: (properties.remove("properties") as? Map<String, Any>)
+            nested?.forEach { (k, v) ->
                 if (!properties.containsKey(k)) {
                     properties[k] = v
                 }
@@ -230,14 +231,17 @@ class DatadadatRemoteServer : ArchiveRemote() {
             commits.mapNotNull { commit ->
                 val id = commit["commitId"] as? String ?: return@mapNotNull null
 
-                // Build properties from all top-level fields (excluding commitId)
+                // Build properties from all top-level fields (excluding commitId).
+                // The API may nest custom properties (including v2) under either
+                // "metadata" (DEV) or "properties" (PROD). Merge whichever exists.
                 val properties = commit.toMutableMap()
                 properties.remove("commitId")
 
-                // Merge nested metadata into top-level properties
+                // Merge nested "metadata" or "properties" sub-map into top level
                 @Suppress("UNCHECKED_CAST")
-                val metadata = properties.remove("metadata") as? Map<String, Any>
-                metadata?.forEach { (k, v) ->
+                val nested = (properties.remove("metadata") as? Map<String, Any>)
+                    ?: (properties.remove("properties") as? Map<String, Any>)
+                nested?.forEach { (k, v) ->
                     if (!properties.containsKey(k)) {
                         properties[k] = v
                     }
