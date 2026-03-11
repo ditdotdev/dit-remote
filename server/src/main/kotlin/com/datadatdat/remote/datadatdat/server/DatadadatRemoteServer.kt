@@ -179,8 +179,9 @@ class DatadadatRemoteServer : ArchiveRemote() {
             val properties = response.toMutableMap()
             properties.remove("commitId")
             @Suppress("UNCHECKED_CAST")
-            val nested = (properties.remove("metadata") as? Map<String, Any>)
-                ?: (properties.remove("properties") as? Map<String, Any>)
+            val nested =
+                (properties.remove("metadata") as? Map<String, Any>)
+                    ?: (properties.remove("properties") as? Map<String, Any>)
             nested?.forEach { (k, v) ->
                 if (!properties.containsKey(k)) {
                     properties[k] = v
@@ -240,8 +241,9 @@ class DatadadatRemoteServer : ArchiveRemote() {
 
                 // Merge nested "metadata" or "properties" sub-map into top level
                 @Suppress("UNCHECKED_CAST")
-                val nested = (properties.remove("metadata") as? Map<String, Any>)
-                    ?: (properties.remove("properties") as? Map<String, Any>)
+                val nested =
+                    (properties.remove("metadata") as? Map<String, Any>)
+                        ?: (properties.remove("properties") as? Map<String, Any>)
                 nested?.forEach { (k, v) ->
                     if (!properties.containsKey(k)) {
                         properties[k] = v
