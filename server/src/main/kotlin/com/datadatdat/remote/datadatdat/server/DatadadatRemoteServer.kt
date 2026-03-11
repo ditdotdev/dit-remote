@@ -164,6 +164,7 @@ class DatadadatRemoteServer : ArchiveRemote() {
             if (props != null) {
                 // Properties format: merge nested metadata into top level
                 val result = props.toMutableMap()
+
                 @Suppress("UNCHECKED_CAST")
                 val metadata = result.remove("metadata") as? Map<String, Any>
                 metadata?.forEach { (k, v) ->
