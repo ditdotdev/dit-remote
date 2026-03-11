@@ -366,7 +366,8 @@ class DatadadatRemoteServerTest : StringSpec() {
         // =========================================
 
         "getCommit returns parsed commit on success with properties format" {
-            val responseJson = """{"id":"commit-123","properties":{"timestamp":"2024-01-01T00:00:00Z","v2":{"image":{"image":"postgres","tag":"latest"}}}}"""
+            val responseJson =
+                """{"id":"commit-123","properties":{"timestamp":"2024-01-01T00:00:00Z","v2":{"image":{"image":"postgres","tag":"latest"}}}}"""
             setupMockCall(mockResponse(200, responseJson))
 
             val result = mockedServer.getCommit(baseRemote, baseParams, "commit-123")
@@ -385,7 +386,8 @@ class DatadadatRemoteServerTest : StringSpec() {
         }
 
         "getCommit handles flat commit format (fallback)" {
-            val responseJson = """{"commitId":"commit-123","timestamp":"2024-01-01T00:00:00Z","metadata":{"v2":{"image":{"image":"postgres","tag":"latest"}}}}"""
+            val responseJson =
+                """{"commitId":"commit-123","timestamp":"2024-01-01T00:00:00Z","metadata":{"v2":{"image":{"image":"postgres","tag":"latest"}}}}"""
             setupMockCall(mockResponse(200, responseJson))
 
             val result = mockedServer.getCommit(baseRemote, baseParams, "commit-123")
