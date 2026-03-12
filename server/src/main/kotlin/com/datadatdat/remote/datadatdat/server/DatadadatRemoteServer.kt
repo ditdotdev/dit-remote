@@ -142,7 +142,7 @@ class DatadadatRemoteServer : ArchiveRemote() {
             if (!response.isSuccessful) {
                 throw IOException("HTTP request failed: ${response.code} ${response.message}")
             }
-            return response.body?.string() ?: ""
+            return response.body.string()
         }
     }
 
@@ -326,7 +326,7 @@ class DatadadatRemoteServer : ArchiveRemote() {
             }
 
             // Write response body to archive file
-            response.body?.byteStream()?.use { input ->
+            response.body.byteStream().use { input ->
                 archive.outputStream().use { output ->
                     input.copyTo(output)
                 }
