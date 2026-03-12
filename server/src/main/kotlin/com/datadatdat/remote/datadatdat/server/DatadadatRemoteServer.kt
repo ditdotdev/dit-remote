@@ -40,6 +40,7 @@ class DatadadatRemoteServer : ArchiveRemote() {
     private val util = RemoteServerUtil()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val octetStreamMediaType = "application/octet-stream".toMediaType()
+    private val mapType = object : TypeToken<Map<String, Any>>() {}.type
 
     // HTTP client with reasonable timeouts
     private val httpClient =
@@ -118,6 +119,22 @@ class DatadadatRemoteServer : ArchiveRemote() {
     }
 
     /**
+     * Safely extract a nested Map<String, Any> from a parent map.
+     * Gson deserializes JSON objects as LinkedTreeMap which implements Map<String, Any>,
+     * so this cast is type-safe for well-formed JSON.
+     */
+    private fun extractMap(
+        parent: Map<String, Any>,
+        key: String,
+    ): Map<String, Any>? {
+        val value = parent[key] ?: return null
+        if (value is Map<*, *>) {
+            return value.entries.associate { (k, v) -> k.toString() to (v as Any) }
+        }
+        return null
+    }
+
+    /**
      * Execute an HTTP request and return the response body as a string.
      */
     private fun executeRequest(request: Request): String {
@@ -152,21 +169,18 @@ class DatadadatRemoteServer : ArchiveRemote() {
 
         return try {
             val responseBody = executeRequest(requestBuilder.build())
-            val type = object : TypeToken<Map<String, Any>>() {}.type
-            val response: Map<String, Any>? = gson.fromJson(responseBody, type)
+            val response: Map<String, Any>? = gson.fromJson(responseBody, mapType)
             if (response == null) return null
 
             // The API returns {"id": "...", "properties": {...}} format.
             // Extract the properties sub-map which contains the actual commit data
             // (v2, author, message, timestamp, etc.).
-            @Suppress("UNCHECKED_CAST")
-            val props = response["properties"] as? Map<String, Any>
+            val props = extractMap(response, "properties")
             if (props != null) {
                 // Properties format: merge nested metadata into top level
                 val result = props.toMutableMap()
-
-                @Suppress("UNCHECKED_CAST")
-                val metadata = result.remove("metadata") as? Map<String, Any>
+                val metadata = extractMap(result, "metadata")
+                result.remove("metadata")
                 metadata?.forEach { (k, v) ->
                     if (!result.containsKey(k)) {
                         result[k] = v
@@ -178,10 +192,9 @@ class DatadadatRemoteServer : ArchiveRemote() {
             // Fallback: flat commit format (e.g., from listCommits-style response)
             val properties = response.toMutableMap()
             properties.remove("commitId")
-            @Suppress("UNCHECKED_CAST")
-            val nested =
-                (properties.remove("metadata") as? Map<String, Any>)
-                    ?: (properties.remove("properties") as? Map<String, Any>)
+            val nested = extractMap(properties, "metadata") ?: extractMap(properties, "properties")
+            properties.remove("metadata")
+            properties.remove("properties")
             nested?.forEach { (k, v) ->
                 if (!properties.containsKey(k)) {
                     properties[k] = v
@@ -219,11 +232,17 @@ class DatadadatRemoteServer : ArchiveRemote() {
         }
 
         val responseBody = executeRequest(requestBuilder.build())
-        val responseType = object : TypeToken<Map<String, Any>>() {}.type
-        val response: Map<String, Any> = gson.fromJson(responseBody, responseType)
+        val response: Map<String, Any> = gson.fromJson(responseBody, mapType)
 
-        @Suppress("UNCHECKED_CAST")
-        val commits = (response["commits"] as? List<Map<String, Any>>) ?: emptyList()
+        val commitsRaw = response["commits"]
+        val commits: List<Map<String, Any>> =
+            if (commitsRaw is List<*>) {
+                commitsRaw.filterIsInstance<Map<*, *>>().map { m ->
+                    m.entries.associate { (k, v) -> k.toString() to (v as Any) }
+                }
+            } else {
+                emptyList()
+            }
 
         // Convert to list of pairs and filter by tags.
         // The API returns standard fields (timestamp, size, author, message, parentId, tags)
@@ -240,10 +259,9 @@ class DatadadatRemoteServer : ArchiveRemote() {
                 properties.remove("commitId")
 
                 // Merge nested "metadata" or "properties" sub-map into top level
-                @Suppress("UNCHECKED_CAST")
-                val nested =
-                    (properties.remove("metadata") as? Map<String, Any>)
-                        ?: (properties.remove("properties") as? Map<String, Any>)
+                val nested = extractMap(properties, "metadata") ?: extractMap(properties, "properties")
+                properties.remove("metadata")
+                properties.remove("properties")
                 nested?.forEach { (k, v) ->
                     if (!properties.containsKey(k)) {
                         properties[k] = v
