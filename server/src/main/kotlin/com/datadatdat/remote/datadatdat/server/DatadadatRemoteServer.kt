@@ -73,13 +73,17 @@ class DatadadatRemoteServer : ArchiveRemote() {
                         throw IllegalArgumentException("port must be between 1 and 65535")
                     }
                 }
+
                 is Double -> {
                     val portInt = port.toInt()
                     if (portInt < 1 || portInt > 65535) {
                         throw IllegalArgumentException("port must be between 1 and 65535")
                     }
                 }
-                else -> throw IllegalArgumentException("port must be a number")
+
+                else -> {
+                    throw IllegalArgumentException("port must be a number")
+                }
             }
         }
 
