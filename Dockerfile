@@ -1,7 +1,7 @@
 # Template Dockerfile for datadatdat projects
 # Replace with project-specific base image and configuration
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # Set working directory
 WORKDIR /app
