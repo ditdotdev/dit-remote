@@ -24,6 +24,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.3.2")
     testImplementation("io.kotlintest:kotlintest-runner-junit5:3.4.2")
     testImplementation("io.mockk:mockk:1.14.9")
+    testImplementation("com.squareup.okhttp3:mockwebserver3:5.3.2")
 }
 
 // Jar configuration
@@ -72,4 +73,13 @@ publishing {
 // Test configuration
 tasks.test {
     useJUnitPlatform()
+    finalizedBy(tasks.jacocoTestReport)
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
 }
