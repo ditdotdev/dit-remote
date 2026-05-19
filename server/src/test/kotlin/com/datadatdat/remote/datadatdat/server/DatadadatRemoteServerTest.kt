@@ -6,37 +6,44 @@ package com.datadatdat.remote.datadatdat.server
 
 import com.datadatdat.remote.RemoteOperation
 import com.datadatdat.remote.RemoteOperationType
+import io.kotlintest.TestCase
+import io.kotlintest.TestResult
 import io.kotlintest.shouldBe
 import io.kotlintest.shouldNotBe
 import io.kotlintest.shouldThrow
 import io.kotlintest.specs.StringSpec
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.verify
-import okhttp3.Call
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.ResponseBody.Companion.toResponseBody
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
+import mockwebserver3.SocketEffect
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 class DatadadatRemoteServerTest : StringSpec() {
     private val server = DatadadatRemoteServer()
 
-    // Server with mocked HTTP client for testing HTTP-dependent methods
-    private val mockClient = mockk<OkHttpClient>()
-    private val mockedServer =
-        DatadadatRemoteServer().also { s ->
-            val field = DatadadatRemoteServer::class.java.getDeclaredField("httpClient")
-            field.isAccessible = true
-            field.set(s, mockClient)
-        }
+    // Real OkHttp client + real local HTTP server. No reflection, no mock framework
+    // for HTTP. MockWebServer responds with whatever we enqueue and records every
+    // request so we can assert on headers, paths, and bodies. A fresh instance per
+    // test guarantees isolation - MockWebServer is not restartable once closed.
+    private lateinit var mockWebServer: MockWebServer
 
-    private val baseRemote =
+    override fun beforeTest(testCase: TestCase) {
+        mockWebServer = MockWebServer()
+        mockWebServer.start()
+    }
+
+    override fun afterTest(
+        testCase: TestCase,
+        result: TestResult,
+    ) {
+        mockWebServer.close()
+    }
+
+    private fun baseRemote(): Map<String, Any> =
         mapOf(
-            "api_base_url" to "http://localhost:8080",
+            "api_base_url" to mockWebServer.url("").toString().trimEnd('/'),
             "org" to "myorg",
             "repo" to "myrepo",
         )
@@ -44,7 +51,7 @@ class DatadadatRemoteServerTest : StringSpec() {
     private val baseParams = emptyMap<String, Any>()
 
     private fun makeOperation(
-        remote: Map<String, Any> = baseRemote,
+        remote: Map<String, Any> = baseRemote(),
         parameters: Map<String, Any> = baseParams,
         commitId: String = "commit-123",
         type: RemoteOperationType = RemoteOperationType.PUSH,
@@ -59,42 +66,26 @@ class DatadadatRemoteServerTest : StringSpec() {
             type = type,
         )
 
-    /**
-     * Build a mock OkHttp response with the given code and body.
-     */
-    private fun mockResponse(
+    private fun enqueue(
         code: Int,
-        body: String,
-        request: Request? = null,
-    ): Response {
-        val req = request ?: Request.Builder().url("http://localhost").build()
-        return Response
-            .Builder()
-            .request(req)
-            .protocol(Protocol.HTTP_1_1)
-            .code(code)
-            .message(if (code == 200) "OK" else "Error")
-            .body(body.toResponseBody(null))
-            .build()
+        body: String = "",
+    ) {
+        mockWebServer.enqueue(
+            MockResponse
+                .Builder()
+                .code(code)
+                .body(body)
+                .build(),
+        )
     }
 
     /**
-     * Set up the mock client to return a given response for any call.
+     * Take the next recorded request, with a short timeout so a missing request
+     * fails fast rather than hanging the test.
      */
-    private fun setupMockCall(response: Response) {
-        val mockCall = mockk<Call>()
-        every { mockCall.execute() } returns response
-        every { mockClient.newCall(any()) } returns mockCall
-    }
-
-    /**
-     * Set up the mock client to throw an exception.
-     */
-    private fun setupMockCallException(exception: Exception) {
-        val mockCall = mockk<Call>()
-        every { mockCall.execute() } throws exception
-        every { mockClient.newCall(any()) } returns mockCall
-    }
+    private fun nextRequest(): RecordedRequest =
+        mockWebServer.takeRequest(5L, TimeUnit.SECONDS)
+            ?: throw AssertionError("Expected an HTTP request but none was received")
 
     init {
         // =========================================
@@ -117,7 +108,6 @@ class DatadadatRemoteServerTest : StringSpec() {
                     "repo" to "myrepo",
                 )
             val result = server.validateRemote(remote)
-            result shouldNotBe null
             result["api_base_url"] shouldBe "http://localhost:8080"
             result["org"] shouldBe "myorg"
             result["repo"] shouldBe "myrepo"
@@ -320,6 +310,31 @@ class DatadadatRemoteServerTest : StringSpec() {
             }
         }
 
+        "validateRemote succeeds with port as Double boundary (1.0)" {
+            val remote =
+                mapOf(
+                    "api_base_url" to "http://localhost:8080",
+                    "org" to "myorg",
+                    "repo" to "myrepo",
+                    "port" to 1.0,
+                )
+            val result = server.validateRemote(remote)
+            result shouldNotBe null
+        }
+
+        "validateRemote fails with port as Double 0.0" {
+            val remote =
+                mapOf(
+                    "api_base_url" to "http://localhost:8080",
+                    "org" to "myorg",
+                    "repo" to "myrepo",
+                    "port" to 0.0,
+                )
+            shouldThrow<IllegalArgumentException> {
+                server.validateRemote(remote)
+            }
+        }
+
         // =========================================
         // validateParameters tests
         // =========================================
@@ -362,118 +377,171 @@ class DatadadatRemoteServerTest : StringSpec() {
         }
 
         // =========================================
-        // getCommit tests (exercises getApiToken, getBaseUrl, executeRequest)
+        // User-Agent interceptor (#1 in the architecture review)
+        // =========================================
+
+        "all outgoing requests carry the datadatdat User-Agent header" {
+            // Enqueue a benign 200 so getCommit returns; we only care that the
+            // recorded request shows our User-Agent.
+            enqueue(200, """{"commitId":"c1"}""")
+
+            server.getCommit(baseRemote(), baseParams, "c1")
+
+            val recorded = nextRequest()
+            recorded.headers["User-Agent"] shouldBe DatadadatRemoteServer.USER_AGENT
+            // Match the documented pattern, not just our own constant value.
+            (recorded.headers["User-Agent"] ?: "") shouldNotBe ""
+            Regex("^datadatdat-remote-kotlin/\\S+$")
+                .matches(recorded.headers["User-Agent"] ?: "") shouldBe true
+        }
+
+        // =========================================
+        // getCommit tests
         // =========================================
 
         "getCommit returns parsed commit on success with properties format" {
             val responseJson =
                 """{"id":"commit-123","properties":{"timestamp":"2024-01-01T00:00:00Z","v2":{"image":{"image":"postgres","tag":"latest"}}}}"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, responseJson)
 
-            val result = mockedServer.getCommit(baseRemote, baseParams, "commit-123")
-            result shouldNotBe null
-            result!!["timestamp"] shouldBe "2024-01-01T00:00:00Z"
-            result.containsKey("id") shouldBe false
-            result.containsKey("commitId") shouldBe false
-            // v2 should be at the top level of the returned properties
-            result.containsKey("v2") shouldBe true
-
-            verify {
-                mockClient.newCall(
-                    match { it.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits/commit-123" },
-                )
+            val result = server.getCommit(baseRemote(), baseParams, "commit-123")
+            result.shouldNotBeNullAndAssert { commit ->
+                commit["timestamp"] shouldBe "2024-01-01T00:00:00Z"
+                commit.containsKey("id") shouldBe false
+                commit.containsKey("commitId") shouldBe false
+                commit.containsKey("v2") shouldBe true
             }
+
+            val recorded = nextRequest()
+            recorded.url.encodedPath shouldBe "/api/v1/repos/myorg/myrepo/commits/commit-123"
         }
 
         "getCommit handles flat commit format (fallback)" {
             val responseJson =
                 """{"commitId":"commit-123","timestamp":"2024-01-01T00:00:00Z","metadata":{"v2":{"image":{"image":"postgres","tag":"latest"}}}}"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, responseJson)
 
-            val result = mockedServer.getCommit(baseRemote, baseParams, "commit-123")
-            result shouldNotBe null
-            result!!["timestamp"] shouldBe "2024-01-01T00:00:00Z"
-            result.containsKey("commitId") shouldBe false
-            result.containsKey("v2") shouldBe true
+            val result = server.getCommit(baseRemote(), baseParams, "commit-123")
+            result.shouldNotBeNullAndAssert { commit ->
+                commit["timestamp"] shouldBe "2024-01-01T00:00:00Z"
+                commit.containsKey("commitId") shouldBe false
+                commit.containsKey("v2") shouldBe true
+            }
         }
 
-        "getCommit returns null on 404" {
-            setupMockCallException(IOException("HTTP request failed: 404 Not Found"))
+        // Covers the inner-metadata merge branch inside getCommit's properties path
+        // (the `metadata?.forEach` loop at lines 211-215).
+        "getCommit merges nested metadata inside properties format" {
+            val responseJson =
+                """{"id":"commit-123","properties":{"timestamp":"2024-01-01T00:00:00Z","metadata":{"extra":"value","timestamp":"OVERRIDDEN"}}}"""
+            enqueue(200, responseJson)
 
-            val result = mockedServer.getCommit(baseRemote, baseParams, "nonexistent")
+            val result = server.getCommit(baseRemote(), baseParams, "commit-123")
+            result.shouldNotBeNullAndAssert { commit ->
+                commit["extra"] shouldBe "value"
+                // Top-level timestamp wins over the same key inside metadata.
+                commit["timestamp"] shouldBe "2024-01-01T00:00:00Z"
+                commit.containsKey("metadata") shouldBe false
+            }
+        }
+
+        // Covers the fallback branch in getCommit where a top-level key collides
+        // with one inside `metadata` (the `if (!properties.containsKey(k))` false branch).
+        "getCommit fallback keeps top-level fields over metadata duplicates" {
+            val responseJson =
+                """{"commitId":"commit-123","author":"top-level","metadata":{"author":"nested","extra":"only-in-nested"}}"""
+            enqueue(200, responseJson)
+
+            val result = server.getCommit(baseRemote(), baseParams, "commit-123")
+            result.shouldNotBeNullAndAssert { commit ->
+                commit["author"] shouldBe "top-level"
+                commit["extra"] shouldBe "only-in-nested"
+            }
+        }
+
+        // Covers extractMap's else-branch: when the key exists but is not a Map,
+        // the helper must return null (line 151). We exercise this via getCommit
+        // by sending a response whose "properties" field is a string, not an object.
+        "getCommit handles response whose properties field is not a map" {
+            val responseJson = """{"commitId":"commit-123","properties":"not-a-map","timestamp":"2024-01-01T00:00:00Z"}"""
+            enqueue(200, responseJson)
+
+            // properties is a string, so extractMap returns null and we fall through
+            // to the flat-format path. The result should include the timestamp.
+            val result = server.getCommit(baseRemote(), baseParams, "commit-123")
+            result.shouldNotBeNullAndAssert { commit ->
+                commit["timestamp"] shouldBe "2024-01-01T00:00:00Z"
+                commit.containsKey("commitId") shouldBe false
+            }
+        }
+
+        // #2 in the architecture review: 404 must be detected via response.code,
+        // not by string-matching the exception message.
+        "getCommit returns null on real 404 response" {
+            enqueue(404, "Not Found")
+
+            val result = server.getCommit(baseRemote(), baseParams, "nonexistent")
             result shouldBe null
         }
 
-        "getCommit throws on server error (non-404)" {
-            setupMockCallException(IOException("HTTP request failed: 500 Internal Server Error"))
+        "getCommit returns null on 404 even when body looks like an error envelope" {
+            // Realistic API response - we should not depend on the body shape at all.
+            enqueue(404, """{"error":"commit not found"}""")
+
+            val result = server.getCommit(baseRemote(), baseParams, "nonexistent")
+            result shouldBe null
+        }
+
+        "getCommit throws on 500 response" {
+            enqueue(500, "Internal Server Error")
 
             shouldThrow<IOException> {
-                mockedServer.getCommit(baseRemote, baseParams, "commit-123")
+                server.getCommit(baseRemote(), baseParams, "commit-123")
+            }
+        }
+
+        "getCommit throws on other 4xx (not 404) response" {
+            enqueue(403, "Forbidden")
+
+            shouldThrow<IOException> {
+                server.getCommit(baseRemote(), baseParams, "commit-123")
             }
         }
 
         "getCommit includes auth header when token in parameters" {
-            val responseJson = """{"commitId":"commit-123"}"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, """{"commitId":"commit-123"}""")
             val params = mapOf<String, Any>("api_token" to "my-secret-token")
 
-            mockedServer.getCommit(baseRemote, params, "commit-123")
+            server.getCommit(baseRemote(), params, "commit-123")
 
-            verify {
-                mockClient.newCall(
-                    match { request ->
-                        request.header("Authorization") == "Bearer my-secret-token"
-                    },
-                )
-            }
+            nextRequest().headers["Authorization"] shouldBe "Bearer my-secret-token"
         }
 
         "getCommit includes auth header when token in remote" {
-            val responseJson = """{"commitId":"commit-123"}"""
-            setupMockCall(mockResponse(200, responseJson))
-            val remoteWithToken = baseRemote + ("api_token" to "remote-token")
+            enqueue(200, """{"commitId":"commit-123"}""")
+            val remoteWithToken = baseRemote() + ("api_token" to "remote-token")
 
-            mockedServer.getCommit(remoteWithToken, baseParams, "commit-123")
+            server.getCommit(remoteWithToken, baseParams, "commit-123")
 
-            verify {
-                mockClient.newCall(
-                    match { request ->
-                        request.header("Authorization") == "Bearer remote-token"
-                    },
-                )
-            }
+            nextRequest().headers["Authorization"] shouldBe "Bearer remote-token"
         }
 
         "getCommit prefers token from parameters over remote" {
-            val responseJson = """{"commitId":"commit-123"}"""
-            setupMockCall(mockResponse(200, responseJson))
-            val remoteWithToken = baseRemote + ("api_token" to "remote-token")
+            enqueue(200, """{"commitId":"commit-123"}""")
+            val remoteWithToken = baseRemote() + ("api_token" to "remote-token")
             val paramsWithToken = mapOf<String, Any>("api_token" to "param-token")
 
-            mockedServer.getCommit(remoteWithToken, paramsWithToken, "commit-123")
+            server.getCommit(remoteWithToken, paramsWithToken, "commit-123")
 
-            verify {
-                mockClient.newCall(
-                    match { request ->
-                        request.header("Authorization") == "Bearer param-token"
-                    },
-                )
-            }
+            nextRequest().headers["Authorization"] shouldBe "Bearer param-token"
         }
 
         "getCommit sends no auth header when no token" {
-            val responseJson = """{"commitId":"commit-123"}"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, """{"commitId":"commit-123"}""")
 
-            mockedServer.getCommit(baseRemote, baseParams, "commit-123")
+            server.getCommit(baseRemote(), baseParams, "commit-123")
 
-            verify {
-                mockClient.newCall(
-                    match { request ->
-                        request.header("Authorization") == null
-                    },
-                )
-            }
+            nextRequest().headers["Authorization"] shouldBe null
         }
 
         // =========================================
@@ -481,48 +549,48 @@ class DatadadatRemoteServerTest : StringSpec() {
         // =========================================
 
         "listCommits returns parsed commits" {
-            val responseJson = """{
+            val responseJson =
+                """{
                 "commits": [
                     {"commitId":"c1","metadata":{"timestamp":"2024-01-02T00:00:00Z","tags":{}}},
                     {"commitId":"c2","metadata":{"timestamp":"2024-01-01T00:00:00Z","tags":{}}}
                 ]
             }"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, responseJson)
 
-            val result = mockedServer.listCommits(baseRemote, baseParams, emptyList())
+            val result = server.listCommits(baseRemote(), baseParams, emptyList())
             result.size shouldBe 2
             result[0].first shouldBe "c1"
             result[1].first shouldBe "c2"
         }
 
         "listCommits returns empty list when no commits" {
-            val responseJson = """{"commits":[]}"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, """{"commits":[]}""")
 
-            val result = mockedServer.listCommits(baseRemote, baseParams, emptyList())
+            val result = server.listCommits(baseRemote(), baseParams, emptyList())
             result.size shouldBe 0
         }
 
         "listCommits returns empty list when commits key is null" {
-            val responseJson = """{}"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, """{}""")
 
-            val result = mockedServer.listCommits(baseRemote, baseParams, emptyList())
+            val result = server.listCommits(baseRemote(), baseParams, emptyList())
             result.size shouldBe 0
         }
 
         "listCommits filters by tags" {
-            val responseJson = """{
+            val responseJson =
+                """{
                 "commits": [
                     {"commitId":"c1","metadata":{"timestamp":"2024-01-02T00:00:00Z","tags":{"env":"prod"}}},
                     {"commitId":"c2","metadata":{"timestamp":"2024-01-01T00:00:00Z","tags":{"env":"dev"}}}
                 ]
             }"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, responseJson)
 
             val result =
-                mockedServer.listCommits(
-                    baseRemote,
+                server.listCommits(
+                    baseRemote(),
                     baseParams,
                     listOf("env" to "prod"),
                 )
@@ -531,43 +599,46 @@ class DatadadatRemoteServerTest : StringSpec() {
         }
 
         "listCommits skips commits with null commitId" {
-            val responseJson = """{
+            val responseJson =
+                """{
                 "commits": [
                     {"metadata":{"timestamp":"2024-01-01T00:00:00Z","tags":{}}},
                     {"commitId":"c1","metadata":{"timestamp":"2024-01-01T00:00:00Z","tags":{}}}
                 ]
             }"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, responseJson)
 
-            val result = mockedServer.listCommits(baseRemote, baseParams, emptyList())
+            val result = server.listCommits(baseRemote(), baseParams, emptyList())
             result.size shouldBe 1
             result[0].first shouldBe "c1"
         }
 
         "listCommits includes commits without metadata field" {
-            val responseJson = """{
+            val responseJson =
+                """{
                 "commits": [
                     {"commitId":"c1"},
                     {"commitId":"c2","metadata":{"timestamp":"2024-01-01T00:00:00Z","tags":{}}}
                 ]
             }"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, responseJson)
 
-            val result = mockedServer.listCommits(baseRemote, baseParams, emptyList())
+            val result = server.listCommits(baseRemote(), baseParams, emptyList())
             result.size shouldBe 2
             result.map { it.first }.toSet() shouldBe setOf("c1", "c2")
         }
 
         "listCommits handles production API format with top-level fields" {
-            val responseJson = """{
+            val responseJson =
+                """{
                 "commits": [
                     {"commitId":"c1","repo":"myorg/myrepo","timestamp":"2024-01-02T00:00:00Z","size":1024,"author":"user@test.com","message":"test commit","tags":{"env":"prod"}},
                     {"commitId":"c2","repo":"myorg/myrepo","timestamp":"2024-01-01T00:00:00Z","size":512}
                 ]
             }"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, responseJson)
 
-            val result = mockedServer.listCommits(baseRemote, baseParams, emptyList())
+            val result = server.listCommits(baseRemote(), baseParams, emptyList())
             result.size shouldBe 2
             result[0].first shouldBe "c1"
             result[0].second["timestamp"] shouldBe "2024-01-02T00:00:00Z"
@@ -576,48 +647,58 @@ class DatadadatRemoteServerTest : StringSpec() {
             result[1].first shouldBe "c2"
         }
 
+        // Covers the false branch of `if (!properties.containsKey(k))` inside
+        // listCommits's nested-merge loop (line ~286): when a metadata key collides
+        // with an existing top-level key, the top-level value must win.
+        "listCommits keeps top-level fields when metadata has the same key" {
+            val responseJson =
+                """{
+                "commits": [
+                    {"commitId":"c1","author":"top-level","metadata":{"author":"nested","extra":"only-in-nested"}}
+                ]
+            }"""
+            enqueue(200, responseJson)
+
+            val result = server.listCommits(baseRemote(), baseParams, emptyList())
+            result.size shouldBe 1
+            result[0].second["author"] shouldBe "top-level"
+            result[0].second["extra"] shouldBe "only-in-nested"
+        }
+
         "listCommits merges properties sub-map (PROD format) into top level" {
-            val responseJson = """{
+            val responseJson =
+                """{
                 "commits": [
                     {"commitId":"c1","repo":"myorg/myrepo","timestamp":"2024-01-02T00:00:00Z","author":"user","properties":{"v2":{"image":{"image":"postgres","tag":"latest"}},"user":"Test User"}}
                 ]
             }"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, responseJson)
 
-            val result = mockedServer.listCommits(baseRemote, baseParams, emptyList())
+            val result = server.listCommits(baseRemote(), baseParams, emptyList())
             result.size shouldBe 1
             result[0].first shouldBe "c1"
-            // v2 should be merged from properties into top level
             result[0].second.containsKey("v2") shouldBe true
-            // Top-level fields should be preserved over nested ones
             result[0].second["author"] shouldBe "user"
-            // properties key itself should be removed
             result[0].second.containsKey("properties") shouldBe false
         }
 
         "listCommits throws on server error" {
-            setupMockCall(mockResponse(500, "Internal Server Error"))
+            enqueue(500, "Internal Server Error")
 
             shouldThrow<IOException> {
-                mockedServer.listCommits(baseRemote, baseParams, emptyList())
+                server.listCommits(baseRemote(), baseParams, emptyList())
             }
         }
 
         "listCommits includes auth header when token provided" {
-            val responseJson = """{"commits":[]}"""
-            setupMockCall(mockResponse(200, responseJson))
+            enqueue(200, """{"commits":[]}""")
             val params = mapOf<String, Any>("api_token" to "my-token")
 
-            mockedServer.listCommits(baseRemote, params, emptyList())
+            server.listCommits(baseRemote(), params, emptyList())
 
-            verify {
-                mockClient.newCall(
-                    match { request ->
-                        request.header("Authorization") == "Bearer my-token" &&
-                            request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits"
-                    },
-                )
-            }
+            val recorded = nextRequest()
+            recorded.headers["Authorization"] shouldBe "Bearer my-token"
+            recorded.url.encodedPath shouldBe "/api/v1/repos/myorg/myrepo/commits"
         }
 
         // =========================================
@@ -633,13 +714,11 @@ class DatadadatRemoteServerTest : StringSpec() {
         "syncDataEnd completes without error on success" {
             val op = makeOperation()
             server.syncDataEnd(op, null, true)
-            // No exception thrown = success
         }
 
         "syncDataEnd completes without error on failure" {
             val op = makeOperation()
             server.syncDataEnd(op, null, false)
-            // No exception thrown = success
         }
 
         // =========================================
@@ -648,37 +727,74 @@ class DatadadatRemoteServerTest : StringSpec() {
 
         "pullArchive downloads content to file" {
             val archiveContent = "fake-archive-content"
-            val response = mockResponse(200, archiveContent)
-            setupMockCall(response)
+            enqueue(200, archiveContent)
 
             val tempFile = File.createTempFile("test-archive", ".tar.gz")
             try {
                 val op = makeOperation(commitId = "commit-456", type = RemoteOperationType.PULL)
-                mockedServer.pullArchive(op, null, "data", tempFile)
+                server.pullArchive(op, null, "data", tempFile)
 
                 tempFile.readText() shouldBe archiveContent
 
-                verify {
-                    mockClient.newCall(
-                        match { request ->
-                            request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits/commit-456/volumes/data" &&
-                                request.method == "GET"
-                        },
-                    )
-                }
+                val recorded = nextRequest()
+                recorded.url.encodedPath shouldBe "/api/v1/repos/myorg/myrepo/commits/commit-456/volumes/data"
+                recorded.method shouldBe "GET"
             } finally {
                 tempFile.delete()
             }
         }
 
         "pullArchive throws on server error" {
-            setupMockCall(mockResponse(500, "Error"))
+            enqueue(500, "Error")
 
             val tempFile = File.createTempFile("test-archive", ".tar.gz")
             try {
                 val op = makeOperation(type = RemoteOperationType.PULL)
                 shouldThrow<IOException> {
-                    mockedServer.pullArchive(op, null, "data", tempFile)
+                    server.pullArchive(op, null, "data", tempFile)
+                }
+            } finally {
+                tempFile.delete()
+            }
+        }
+
+        // Covers the synthetic exception-handling path inside the outer `use {}`
+        // block of pullArchive (line 349) - when archive.outputStream() throws,
+        // the response body stream's `use` must still close cleanly.
+        "pullArchive propagates IOException when output stream cannot be opened" {
+            enqueue(200, "archive-content")
+
+            // Pointing the archive at a non-existent directory makes
+            // archive.outputStream() fail with FileNotFoundException.
+            val unwritable = File("/nonexistent-directory/that/does/not/exist/file.tar.gz")
+            val op = makeOperation(type = RemoteOperationType.PULL)
+
+            shouldThrow<IOException> {
+                server.pullArchive(op, null, "data", unwritable)
+            }
+        }
+
+        // Covers the synthetic exception path of the inner `use {}` (line 350):
+        // after both streams are open, force the copy itself to fail by having
+        // MockWebServer close the socket mid-response.
+        "pullArchive propagates IOException when response body is truncated" {
+            mockWebServer.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    // Promise more bytes than we will send, then close the socket
+                    // during the response body - input.copyTo(output) throws.
+                    .addHeader("Content-Length", "1000000")
+                    .body("partial")
+                    .onResponseBody(SocketEffect.CloseSocket())
+                    .build(),
+            )
+
+            val tempFile = File.createTempFile("test-archive", ".tar.gz")
+            try {
+                val op = makeOperation(type = RemoteOperationType.PULL)
+                shouldThrow<IOException> {
+                    server.pullArchive(op, null, "data", tempFile)
                 }
             } finally {
                 tempFile.delete()
@@ -686,22 +802,15 @@ class DatadadatRemoteServerTest : StringSpec() {
         }
 
         "pullArchive includes auth header when token provided" {
-            val response = mockResponse(200, "data")
-            setupMockCall(response)
+            enqueue(200, "data")
 
             val tempFile = File.createTempFile("test-archive", ".tar.gz")
             try {
                 val params = mapOf<String, Any>("api_token" to "pull-token")
                 val op = makeOperation(parameters = params, type = RemoteOperationType.PULL)
-                mockedServer.pullArchive(op, null, "vol1", tempFile)
+                server.pullArchive(op, null, "vol1", tempFile)
 
-                verify {
-                    mockClient.newCall(
-                        match { request ->
-                            request.header("Authorization") == "Bearer pull-token"
-                        },
-                    )
-                }
+                nextRequest().headers["Authorization"] shouldBe "Bearer pull-token"
             } finally {
                 tempFile.delete()
             }
@@ -712,22 +821,20 @@ class DatadadatRemoteServerTest : StringSpec() {
         // =========================================
 
         "pushArchive uploads file content" {
-            setupMockCall(mockResponse(200, ""))
+            enqueue(200, "")
 
             val tempFile = File.createTempFile("test-archive", ".tar.gz")
             try {
                 tempFile.writeText("archive-data")
                 val op = makeOperation(commitId = "commit-789")
-                mockedServer.pushArchive(op, null, "data", tempFile)
+                server.pushArchive(op, null, "data", tempFile)
 
-                verify {
-                    mockClient.newCall(
-                        match { request ->
-                            request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits/commit-789/volumes/data" &&
-                                request.method == "PUT"
-                        },
-                    )
-                }
+                val recorded = nextRequest()
+                recorded.url.encodedPath shouldBe "/api/v1/repos/myorg/myrepo/commits/commit-789/volumes/data"
+                recorded.method shouldBe "PUT"
+
+                // Read body from MockWebServer's recorded request (ByteString)
+                recorded.body?.utf8() shouldBe "archive-data"
             } finally {
                 tempFile.delete()
             }
@@ -738,19 +845,19 @@ class DatadadatRemoteServerTest : StringSpec() {
             val op = makeOperation()
 
             shouldThrow<IOException> {
-                mockedServer.pushArchive(op, null, "data", nonExistentFile)
+                server.pushArchive(op, null, "data", nonExistentFile)
             }
         }
 
         "pushArchive throws on server error" {
-            setupMockCall(mockResponse(500, "Error"))
+            enqueue(500, "Error")
 
             val tempFile = File.createTempFile("test-archive", ".tar.gz")
             try {
                 tempFile.writeText("archive-data")
                 val op = makeOperation()
                 shouldThrow<IOException> {
-                    mockedServer.pushArchive(op, null, "data", tempFile)
+                    server.pushArchive(op, null, "data", tempFile)
                 }
             } finally {
                 tempFile.delete()
@@ -758,22 +865,16 @@ class DatadadatRemoteServerTest : StringSpec() {
         }
 
         "pushArchive includes auth header when token provided" {
-            setupMockCall(mockResponse(200, ""))
+            enqueue(200, "")
 
             val tempFile = File.createTempFile("test-archive", ".tar.gz")
             try {
                 tempFile.writeText("archive-data")
                 val params = mapOf<String, Any>("api_token" to "push-token")
                 val op = makeOperation(parameters = params)
-                mockedServer.pushArchive(op, null, "vol1", tempFile)
+                server.pushArchive(op, null, "vol1", tempFile)
 
-                verify {
-                    mockClient.newCall(
-                        match { request ->
-                            request.header("Authorization") == "Bearer push-token"
-                        },
-                    )
-                }
+                nextRequest().headers["Authorization"] shouldBe "Bearer push-token"
             } finally {
                 tempFile.delete()
             }
@@ -784,79 +885,56 @@ class DatadadatRemoteServerTest : StringSpec() {
         // =========================================
 
         "pushMetadata sends POST with commit data" {
-            setupMockCall(mockResponse(200, ""))
+            enqueue(200, "")
 
             val op = makeOperation(commitId = "commit-abc")
             val commit = mapOf<String, Any>("timestamp" to "2024-01-01T00:00:00Z")
-            mockedServer.pushMetadata(op, commit, false)
+            server.pushMetadata(op, commit, false)
 
-            verify {
-                mockClient.newCall(
-                    match { request ->
-                        request.url.toString() == "http://localhost:8080/api/v1/repos/myorg/myrepo/commits" &&
-                            request.method == "POST"
-                    },
-                )
-            }
+            val recorded = nextRequest()
+            recorded.url.encodedPath shouldBe "/api/v1/repos/myorg/myrepo/commits"
+            recorded.method shouldBe "POST"
         }
 
         "pushMetadata sends POST with isUpdate true" {
-            setupMockCall(mockResponse(200, ""))
+            enqueue(200, "")
 
             val op = makeOperation(commitId = "commit-abc")
             val commit = mapOf<String, Any>("timestamp" to "2024-01-01T00:00:00Z")
-            mockedServer.pushMetadata(op, commit, true)
+            server.pushMetadata(op, commit, true)
 
-            verify {
-                mockClient.newCall(
-                    match { request ->
-                        request.method == "POST"
-                    },
-                )
-            }
+            nextRequest().method shouldBe "POST"
         }
 
         "pushMetadata throws on server error" {
-            setupMockCall(mockResponse(500, "Error"))
+            enqueue(500, "Error")
 
             val op = makeOperation()
             val commit = mapOf<String, Any>("timestamp" to "2024-01-01T00:00:00Z")
             shouldThrow<IOException> {
-                mockedServer.pushMetadata(op, commit, false)
+                server.pushMetadata(op, commit, false)
             }
         }
 
         "pushMetadata includes auth header when token provided" {
-            setupMockCall(mockResponse(200, ""))
+            enqueue(200, "")
 
             val params = mapOf<String, Any>("api_token" to "meta-token")
             val op = makeOperation(parameters = params)
             val commit = mapOf<String, Any>("timestamp" to "2024-01-01T00:00:00Z")
-            mockedServer.pushMetadata(op, commit, false)
+            server.pushMetadata(op, commit, false)
 
-            verify {
-                mockClient.newCall(
-                    match { request ->
-                        request.header("Authorization") == "Bearer meta-token"
-                    },
-                )
-            }
+            nextRequest().headers["Authorization"] shouldBe "Bearer meta-token"
         }
 
         "pushMetadata sends no auth header when no token" {
-            setupMockCall(mockResponse(200, ""))
+            enqueue(200, "")
 
             val op = makeOperation()
             val commit = mapOf<String, Any>("timestamp" to "2024-01-01T00:00:00Z")
-            mockedServer.pushMetadata(op, commit, false)
+            server.pushMetadata(op, commit, false)
 
-            verify {
-                mockClient.newCall(
-                    match { request ->
-                        request.header("Authorization") == null
-                    },
-                )
-            }
+            nextRequest().headers["Authorization"] shouldBe null
         }
 
         // =========================================
@@ -864,12 +942,23 @@ class DatadadatRemoteServerTest : StringSpec() {
         // =========================================
 
         "executeRequest handles empty response body" {
-            setupMockCall(mockResponse(200, ""))
+            enqueue(200, "")
 
             // getCommit calls executeRequest internally; with empty body it returns ""
             // Gson.fromJson("", ...) returns null, so getCommit returns null
-            val result = mockedServer.getCommit(baseRemote, baseParams, "commit-123")
+            val result = server.getCommit(baseRemote(), baseParams, "commit-123")
             result shouldBe null
         }
     }
+}
+
+/**
+ * Helper that replaces the previous `result!!` non-null assertion with a guarded
+ * check that fails the test (rather than throwing NPE) when `result` is null.
+ */
+private inline fun <T : Any> T?.shouldNotBeNullAndAssert(block: (T) -> Unit) {
+    if (this == null) {
+        throw AssertionError("expected non-null result")
+    }
+    block(this)
 }
