@@ -42,14 +42,27 @@ class DatadadatRemoteServer : ArchiveRemote() {
     private val octetStreamMediaType = "application/octet-stream".toMediaType()
     private val mapType = object : TypeToken<Map<String, Any>>() {}.type
 
-    // HTTP client with reasonable timeouts
-    private val httpClient =
+    // HTTP client with reasonable timeouts and a User-Agent identifying this provider
+    private val httpClient: OkHttpClient =
         OkHttpClient
             .Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(300, TimeUnit.SECONDS)
             .writeTimeout(300, TimeUnit.SECONDS)
-            .build()
+            .addInterceptor { chain ->
+                chain.proceed(
+                    chain
+                        .request()
+                        .newBuilder()
+                        .header("User-Agent", USER_AGENT)
+                        .build(),
+                )
+            }.build()
+
+    companion object {
+        /** User-Agent header value sent on all outgoing HTTP requests. */
+        const val USER_AGENT: String = "datadatdat-remote-kotlin/1.0"
+    }
 
     override fun getProvider(): String = "datadatdat"
 
@@ -171,47 +184,57 @@ class DatadadatRemoteServer : ArchiveRemote() {
             requestBuilder.addHeader("Authorization", "Bearer $apiToken")
         }
 
-        return try {
-            val responseBody = executeRequest(requestBuilder.build())
-            val response: Map<String, Any>? = gson.fromJson(responseBody, mapType)
-            if (response == null) return null
+        // Inspect the response status code directly so we can distinguish a 404
+        // ("commit doesn't exist") from any other failure. String matching on
+        // exception messages would be fragile.
+        val responseBody =
+            httpClient.newCall(requestBuilder.build()).execute().use { response ->
+                when {
+                    response.code == 404 -> {
+                        return null
+                    }
 
-            // The API returns {"id": "...", "properties": {...}} format.
-            // Extract the properties sub-map which contains the actual commit data
-            // (v2, author, message, timestamp, etc.).
-            val props = extractMap(response, "properties")
-            if (props != null) {
-                // Properties format: merge nested metadata into top level
-                val result = props.toMutableMap()
-                val metadata = extractMap(result, "metadata")
-                result.remove("metadata")
-                metadata?.forEach { (k, v) ->
-                    if (!result.containsKey(k)) {
-                        result[k] = v
+                    !response.isSuccessful -> {
+                        throw IOException("HTTP request failed: ${response.code} ${response.message}")
+                    }
+
+                    else -> {
+                        response.body.string()
                     }
                 }
-                return result.toMap()
             }
 
-            // Fallback: flat commit format (e.g., from listCommits-style response)
-            val properties = response.toMutableMap()
-            properties.remove("commitId")
-            val nested = extractMap(properties, "metadata") ?: extractMap(properties, "properties")
-            properties.remove("metadata")
-            properties.remove("properties")
-            nested?.forEach { (k, v) ->
-                if (!properties.containsKey(k)) {
-                    properties[k] = v
+        val response: Map<String, Any> = gson.fromJson(responseBody, mapType) ?: return null
+
+        // The API returns {"id": "...", "properties": {...}} format.
+        // Extract the properties sub-map which contains the actual commit data
+        // (v2, author, message, timestamp, etc.).
+        val props = extractMap(response, "properties")
+        if (props != null) {
+            // Properties format: merge nested metadata into top level
+            val result = props.toMutableMap()
+            val metadata = extractMap(result, "metadata")
+            result.remove("metadata")
+            metadata?.forEach { (k, v) ->
+                if (!result.containsKey(k)) {
+                    result[k] = v
                 }
             }
-            properties.toMap()
-        } catch (e: IOException) {
-            if (e.message?.contains("404") == true) {
-                null
-            } else {
-                throw e
+            return result.toMap()
+        }
+
+        // Fallback: flat commit format (e.g., from listCommits-style response)
+        val properties = response.toMutableMap()
+        properties.remove("commitId")
+        val nested = extractMap(properties, "metadata") ?: extractMap(properties, "properties")
+        properties.remove("metadata")
+        properties.remove("properties")
+        nested?.forEach { (k, v) ->
+            if (!properties.containsKey(k)) {
+                properties[k] = v
             }
         }
+        return properties.toMap()
     }
 
     /**
