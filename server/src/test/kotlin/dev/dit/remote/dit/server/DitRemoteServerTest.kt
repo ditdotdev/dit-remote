@@ -1,11 +1,11 @@
 /*
- * Copyright Datadatdat.
+ * Copyright Dit.
  */
 
-package com.datadatdat.remote.datadatdat.server
+package dev.dit.remote.dit.server
 
-import com.datadatdat.remote.RemoteOperation
-import com.datadatdat.remote.RemoteOperationType
+import dev.dit.remote.RemoteOperation
+import dev.dit.remote.RemoteOperationType
 import io.kotlintest.TestCase
 import io.kotlintest.TestResult
 import io.kotlintest.shouldBe
@@ -20,8 +20,8 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-class DatadadatRemoteServerTest : StringSpec() {
-    private val server = DatadadatRemoteServer()
+class DitRemoteServerTest : StringSpec() {
+    private val server = DitRemoteServer()
 
     // Real OkHttp client + real local HTTP server. No reflection, no mock framework
     // for HTTP. MockWebServer responds with whatever we enqueue and records every
@@ -92,8 +92,8 @@ class DatadadatRemoteServerTest : StringSpec() {
         // getProvider tests
         // =========================================
 
-        "getProvider returns datadatdat" {
-            server.getProvider() shouldBe "datadatdat"
+        "getProvider returns dit" {
+            server.getProvider() shouldBe "dit"
         }
 
         // =========================================
@@ -380,7 +380,7 @@ class DatadadatRemoteServerTest : StringSpec() {
         // User-Agent interceptor (#1 in the architecture review)
         // =========================================
 
-        "all outgoing requests carry the datadatdat User-Agent header" {
+        "all outgoing requests carry the dit User-Agent header" {
             // Enqueue a benign 200 so getCommit returns; we only care that the
             // recorded request shows our User-Agent.
             enqueue(200, """{"commitId":"c1"}""")
@@ -388,10 +388,10 @@ class DatadadatRemoteServerTest : StringSpec() {
             server.getCommit(baseRemote(), baseParams, "c1")
 
             val recorded = nextRequest()
-            recorded.headers["User-Agent"] shouldBe DatadadatRemoteServer.USER_AGENT
+            recorded.headers["User-Agent"] shouldBe DitRemoteServer.USER_AGENT
             // Match the documented pattern, not just our own constant value.
             (recorded.headers["User-Agent"] ?: "") shouldNotBe ""
-            Regex("^datadatdat-remote-kotlin/\\S+$")
+            Regex("^dit-remote-kotlin/\\S+$")
                 .matches(recorded.headers["User-Agent"] ?: "") shouldBe true
         }
 
