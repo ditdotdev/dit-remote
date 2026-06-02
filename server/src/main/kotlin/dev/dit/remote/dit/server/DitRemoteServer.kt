@@ -1,15 +1,15 @@
 /*
- * Copyright Datadatdat.
+ * Copyright Dit.
  */
 
-package com.datadatdat.remote.datadatdat.server
+package dev.dit.remote.dit.server
 
-import com.datadatdat.remote.RemoteOperation
-import com.datadatdat.remote.RemoteOperationType
-import com.datadatdat.remote.RemoteServerUtil
-import com.datadatdat.remote.archive.ArchiveRemote
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import dev.dit.remote.RemoteOperation
+import dev.dit.remote.RemoteOperationType
+import dev.dit.remote.RemoteServerUtil
+import dev.dit.remote.archive.ArchiveRemote
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -20,14 +20,14 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * The Datadatdat provider integrates with datadatdat-remote-server, a "GitHub for d3" service
+ * The Dit provider integrates with dit-remote-server, a "GitHub for d3" service
  * that provides centralized storage and management of d3 commits via HTTP APIs.
  *
  * This provider handles client-side operations for pushing, pulling, cloning, and listing
- * commits from a datadatdat-remote-server instance.
+ * commits from a dit-remote-server instance.
  *
  * Expected remote properties:
- * - api_base_url (required): Base URL of the datadatdat-remote-server (e.g., "http://localhost:8080")
+ * - api_base_url (required): Base URL of the dit-remote-server (e.g., "http://localhost:8080")
  * - org (required): Organization name in the remote server
  * - repo (required): Repository name in the remote server
  * - port (optional): Port number if not included in api_base_url
@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
  *
  * Example remote URL: http://localhost:8080/myorg/myrepo
  */
-class DatadadatRemoteServer : ArchiveRemote() {
+class DitRemoteServer : ArchiveRemote() {
     private val gson = Gson()
     private val util = RemoteServerUtil()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
@@ -61,13 +61,13 @@ class DatadadatRemoteServer : ArchiveRemote() {
 
     companion object {
         /** User-Agent header value sent on all outgoing HTTP requests. */
-        const val USER_AGENT: String = "datadatdat-remote-kotlin/1.0"
+        const val USER_AGENT: String = "dit-remote-kotlin/1.0"
     }
 
-    override fun getProvider(): String = "datadatdat"
+    override fun getProvider(): String = "dit"
 
     /**
-     * Validate a datadatdat remote. Required fields are api_base_url, org, and repo.
+     * Validate a dit remote. Required fields are api_base_url, org, and repo.
      * Optional fields include port and api_token.
      */
     override fun validateRemote(remote: Map<String, Any>): Map<String, Any> {
@@ -104,7 +104,7 @@ class DatadadatRemoteServer : ArchiveRemote() {
     }
 
     /**
-     * Validate datadatdat parameters. Parameters can include all remote properties
+     * Validate dit parameters. Parameters can include all remote properties
      * plus api_token for authentication.
      */
     override fun validateParameters(parameters: Map<String, Any>?): Map<String, Any> {

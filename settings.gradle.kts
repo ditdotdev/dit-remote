@@ -1,3 +1,3 @@
-rootProject.name = "datadatdat-remote"
+rootProject.name = "dit-remote"
 
 include("server")
