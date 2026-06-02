@@ -1,7 +1,7 @@
 # Project Development
 
 For general information about contributing changes, see the
-[Contributor Guidelines](https://github.com/datadatdat/.github/blob/master/CONTRIBUTING.md).
+[Contributor Guidelines](https://github.com/ditdotdev/.github/blob/master/CONTRIBUTING.md).
 
 ## How it Works
 
@@ -12,7 +12,7 @@ to get started making changes.
 
 For Docker-based projects:
 ```bash
-docker build -t datadatdat/REPOSITORY_NAME:latest .
+docker build -t ditdotdev/REPOSITORY_NAME:latest .
 ```
 
 For other projects, describe the specific build process.
@@ -22,7 +22,7 @@ For other projects, describe the specific build process.
 Describe how to test the project locally:
 ```bash
 # Example for Docker projects
-docker run --rm datadatdat/REPOSITORY_NAME:latest
+docker run --rm ditdotdev/REPOSITORY_NAME:latest
 ```
 
 ## Releasing
@@ -45,8 +45,8 @@ This repository uses automated releases via GitHub Actions:
 ### Docker Projects
 
 For Docker-based projects, releases automatically publish to:
-- `datadatdat/REPOSITORY_NAME:v1.0.1` (version-specific tag)
-- `datadatdat/REPOSITORY_NAME:latest` (latest tag)
+- `ditdotdev/REPOSITORY_NAME:v1.0.1` (version-specific tag)
+- `ditdotdev/REPOSITORY_NAME:latest` (latest tag)
 
 ### Release Notes
 

@@ -45,5 +45,5 @@ template: |
 
   ## Docker Images
 
-  - `datadatdat/REPOSITORY_NAME:$RESOLVED_VERSION`
-  - `datadatdat/REPOSITORY_NAME:latest`
+  - `ditdotdev/REPOSITORY_NAME:$RESOLVED_VERSION`
+  - `ditdotdev/REPOSITORY_NAME:latest`
