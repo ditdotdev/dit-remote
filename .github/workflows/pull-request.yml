@@ -33,6 +33,8 @@ jobs:
 
       - name: Build and test
         run: ./gradlew build
+      - name: Verify Maven Central publication
+        run: scripts/verify-publication.sh dit-remote-server
 
       - name: Cleanup Gradle Cache
         if: always()
