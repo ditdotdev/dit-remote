@@ -22,31 +22,31 @@ This is the **server-side** Kotlin provider that runs within the dit-server. It 
 
 ## Remote Configuration
 
-\`\`\`
+```
 http://localhost:8080/org/repo
 https://api.example.com:443/myorg/myrepo
-\`\`\`
+```
 
 ### Required Properties
-- \`api_base_url\`: Base URL of dit-remote-server (e.g., "http://localhost:8080")
-- \`org\`: Organization name
-- \`repo\`: Repository name
+- `api_base_url`: Base URL of dit-remote-server (e.g., "http://localhost:8080")
+- `org`: Organization name
+- `repo`: Repository name
 
 ### Optional Properties
-- \`port\`: Port number (if not in URL)
-- \`api_token\`: Authentication token for API access
+- `port`: Port number (if not in URL)
+- `api_token`: Authentication token for API access
 
 ## Building
 
-\`\`\`bash
+```bash
 ./gradlew build
-\`\`\`
+```
 
 ## Testing
 
-\`\`\`bash
+```bash
 ./gradlew test
-\`\`\`
+```
 
 ## Related Repositories
 
@@ -56,8 +56,21 @@ https://api.example.com:443/myorg/myrepo
 
 ## Contributing
 
-This project follows the Dit community best practices. See [DEVELOPING.md](DEVELOPING.md) for details.
+This project follows the Dit community best practices:
+
+  * [Contributing](https://github.com/ditdotdev/.github/blob/master/CONTRIBUTING.md)
+  * [Code of Conduct](https://github.com/ditdotdev/.github/blob/master/CODE_OF_CONDUCT.md)
+  * [Community Support](https://github.com/ditdotdev/.github/blob/master/SUPPORT.md)
+
+It is maintained by the [Dit community maintainers](https://github.com/ditdotdev/.github/blob/master/MAINTAINERS.md)
+
+For more information on how it works, and how to build and release new versions,
+see the [Development Guidelines](DEVELOPING.md).
+
 
 ## License
 
-Copyright Dit.
+This project is licensed under the Business Source License 1.1 (BUSL-1.1).
+On the Change Date (four years from the publication of each version), the
+license for that version converts to the Mozilla Public License 2.0
+(MPL-2.0). See [LICENSE](LICENSE) for the full terms.

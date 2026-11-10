@@ -1,6 +1,5 @@
-#
-# Copyright Datadatdat.
-#
+# Copyright Dit 2026
+# SPDX-License-Identifier: BUSL-1.1
 
 #
 # We run a full build (including lint) on each pull request.
@@ -11,6 +10,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   buildandtest:

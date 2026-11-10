@@ -1,5 +1,6 @@
 /*
- * Copyright Datadatdat.
+ * Copyright Dit 2026
+ * SPDX-License-Identifier: BUSL-1.1
  */
 
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
