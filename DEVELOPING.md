@@ -5,55 +5,21 @@ For general information about contributing changes, see the
 
 ## How it Works
 
-Describe the internal mechanisms necessary for developers to understand how
-to get started making changes.
+The provider uses the Dit `remote-sdk` to provide interfaces for
+`dit-server` to use. It implements the server side of the `dit` remote: push,
+pull and commit listing against the dit-remote-server HTTP API. The resulting
+server jar is incorporated into the dit-server build and discovered through
+`ServiceLoader`.
 
 ## Building
 
-For Docker-based projects:
-```bash
-docker build -t ditdotdev/REPOSITORY_NAME:latest .
-```
-
-For other projects, describe the specific build process.
+Run `./gradlew build`.
 
 ## Testing
 
-Describe how to test the project locally:
-```bash
-# Example for Docker projects
-docker run --rm ditdotdev/REPOSITORY_NAME:latest
-```
+Tests are run as part of `./gradlew build`. Tests can also be explicitly run
+via `./gradlew test`.
 
 ## Releasing
 
-This repository uses automated releases via GitHub Actions:
-
-### Creating a Release
-
-1. **Create and push a version tag:**
-   ```bash
-   git tag v1.0.1
-   git push origin v1.0.1
-   ```
-
-2. **Automated workflow triggers:**
-   - Builds the project (Docker image for containerized projects)
-   - Publishes to appropriate registry (Docker Hub, etc.)
-   - Creates GitHub release with auto-generated notes
-
-### Docker Projects
-
-For Docker-based projects, releases automatically publish to:
-- `ditdotdev/REPOSITORY_NAME:v1.0.1` (version-specific tag)
-- `ditdotdev/REPOSITORY_NAME:latest` (latest tag)
-
-### Release Notes
-
-The draft release workflow automatically updates release notes on each push to master. Release notes are categorized by:
-- 🚀 Features
-- 🐛 Bug Fixes  
-- 🧰 Maintenance
-- 🐳 Docker changes
-
-Use appropriate labels on PRs to ensure proper categorization.
+Releases are triggered by pushing tags to the master branch.
